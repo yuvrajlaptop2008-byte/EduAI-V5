@@ -1,0 +1,328 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false; // default deny catch-all
+    }
+
+    // Primitive Definition
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+    function isAuthenticated() { return request.auth != null; }
+    function isAdmin() { 
+      return isSignedIn() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+
+    function isValidUserCreate(data) {
+      return data.keys().hasAll(['uid', 'email', 'name', 'points', 'streak', 'role']) &&
+             data.keys().size() <= 20 && // relaxed to account for targetExam, field, onboarded, instituteId, examGroupId, linkedStudentIds, etc.
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
+             data.email is string && data.email.size() > 0 && data.email.size() < 100 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.points is number && data.points >= 0 &&
+             data.streak is number && data.streak >= 0 &&
+             data.role in ['user', 'student', 'teacher', 'parent', 'admin'];
+    }
+    function isTeacher() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
+    }
+    function isParentRole() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'parent';
+    }
+
+    function isValidUserPublicCreate(data) {
+      return data.keys().hasAll(['uid', 'name', 'points', 'rank']) &&
+             data.keys().size() <= 6 &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.points is number && data.points >= 0 &&
+             data.rank is number && data.rank >= 0;
+    }
+
+    function isValidActivityCreate(data) {
+      return data.keys().hasAll(['userId', 'date', 'questionsSolved', 'accuracy', 'timeSpent', 'pointsEarned']) &&
+             data.keys().size() == 6 &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 100 &&
+             data.date is string && data.date.matches("^\\d{4}-\\d{2}-\\d{2}$") &&
+             data.questionsSolved is number && data.questionsSolved >= 0 &&
+             data.accuracy is number && data.accuracy >= 0 && data.accuracy <= 100 &&
+             data.timeSpent is number && data.timeSpent >= 0 &&
+             data.pointsEarned is number && data.pointsEarned >= 0;
+    }
+
+    function isValidCommunitySolutionCreate(data) {
+      return data.keys().hasAll(['id', 'questionId', 'authorId', 'author', 'text', 'tag', 'upvotes', 'downvotes', 'repliesCount', 'date', 'createdAt']) &&
+             data.keys().size() <= 14 &&
+             data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
+             data.questionId is string && data.questionId.size() > 0 && data.questionId.size() < 100 &&
+             data.authorId is string && data.authorId.size() > 0 && data.authorId.size() < 100 &&
+             data.author is string && data.author.size() > 0 && data.author.size() < 100 &&
+             data.text is string && data.text.size() > 0 && data.text.size() < 10000 &&
+             data.tag is string && data.tag.size() < 50 &&
+             data.upvotes is number && data.upvotes >= 0 &&
+             data.downvotes is number && data.downvotes >= 0 &&
+             data.repliesCount is number && data.repliesCount >= 0 &&
+             data.date is string && data.date.size() < 50 &&
+             data.createdAt is number;
+    }
+
+    function isValidSolutionReplyCreate(data) {
+      return data.keys().hasAll(['id', 'solutionId', 'authorId', 'author', 'text', 'date', 'createdAt']) &&
+             data.keys().size() <= 8 &&
+             data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
+             data.solutionId is string && data.solutionId.size() > 0 && data.solutionId.size() < 100 &&
+             data.authorId is string && data.authorId.size() > 0 && data.authorId.size() < 100 &&
+             data.author is string && data.author.size() > 0 && data.author.size() < 100 &&
+             data.text is string && data.text.size() > 0 && data.text.size() < 5000 &&
+             data.date is string && data.date.size() < 50 &&
+             data.createdAt is number;
+    }
+
+    function isValidSolutionVoteCreate(data) {
+       return data.keys().hasAll(['userId', 'solutionId', 'type']) &&
+              data.keys().size() == 3 &&
+              data.userId is string && data.userId.size() > 0 && data.userId.size() < 100 &&
+              data.solutionId is string && data.solutionId.size() > 0 && data.solutionId.size() < 100 &&
+              data.type in ['up', 'down'];
+    }
+
+    function isValidSavedSolutionCreate(data) {
+      return data.keys().hasAll(['userId', 'solutionId', 'savedAt']) &&
+             data.keys().size() == 3 &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 100 &&
+             data.solutionId is string && data.solutionId.size() > 0 && data.solutionId.size() < 100 &&
+             data.savedAt is number;
+    }
+
+    function isValidReportCreate(data) {
+      return data.keys().hasAll(['solutionId', 'reporterId', 'createdAt', 'status']) &&
+             data.keys().size() == 4 &&
+             data.solutionId is string && data.solutionId.size() > 0 && data.solutionId.size() < 100 &&
+             data.reporterId is string && data.reporterId.size() > 0 && data.reporterId.size() < 100 &&
+             data.createdAt is number &&
+             data.status in ['pending', 'reviewed', 'resolved'];
+    }
+
+
+    match /test/connection {
+      allow read: if true;
+    }
+
+    match /custom_questions/{questionId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    match /class_tests/{testId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    match /users_public/{userId} {
+      allow get: if isAuthenticated();
+      allow list: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUserPublicCreate(incoming()) && incoming().uid == userId;
+      allow update: if isOwner(userId) && isValidId(userId) && incoming().uid == existing().uid && incoming().diff(existing()).affectedKeys().hasOnly(['profilePic', 'avatarConfig', 'points', 'name', 'rank']);
+      allow delete: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin() || isTeacher() || isParentRole();
+      allow list: if isAdmin() || isTeacher();
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUserCreate(incoming()) && incoming().uid == userId && (incoming().role in ['user', 'teacher', 'parent'] || isAdmin());
+      allow update: if isAdmin() || (isOwner(userId) && isValidId(userId) && incoming().uid == existing().uid && (!('role' in incoming().diff(existing()).affectedKeys()) || incoming().role == existing().role));
+      allow delete: if isAdmin();
+
+      match /activity/{date} {
+        allow get: if isOwner(userId) || isAdmin();
+        allow list: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidActivityCreate(incoming()) && incoming().userId == userId;
+        allow update: if isOwner(userId) && incoming().userId == existing().userId && incoming().diff(existing()).affectedKeys().hasOnly(['questionsSolved', 'accuracy', 'timeSpent', 'pointsEarned']);
+        allow delete: if isAdmin();
+      }
+
+      match /notes/{noteId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /testReports/{reportId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /test_reports/{reportId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /customFormulas/{formulaId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /dpp_progress/{progressId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /bookmarks/{bookmarkId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /study_sessions/{sessionId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    match /solutions/{solutionId} {
+      allow get: if isAuthenticated();
+      allow list: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidId(solutionId) && isValidCommunitySolutionCreate(incoming()) && incoming().authorId == request.auth.uid;
+      allow update: if isAuthenticated() && isValidId(solutionId) && incoming().authorId == existing().authorId && (
+        (incoming().diff(existing()).affectedKeys().hasOnly(['upvotes', 'downvotes', 'repliesCount', 'isVerified', 'text', 'tag', 'imageUrl'])) || isAdmin()
+      );
+      allow delete: if isAdmin() || (isAuthenticated() && existing().authorId == request.auth.uid);
+
+      match /replies/{replyId} {
+        allow get: if isAuthenticated();
+        allow list: if isAuthenticated();
+        allow create: if isAuthenticated() && isValidId(replyId) && isValidSolutionReplyCreate(incoming()) && incoming().authorId == request.auth.uid;
+        allow update: if isAuthenticated() && isValidId(replyId) && incoming().authorId == existing().authorId && (
+          (incoming().diff(existing()).affectedKeys().hasOnly(['text'])) || isAdmin()
+        );
+        allow delete: if isAdmin() || (isAuthenticated() && existing().authorId == request.auth.uid);
+      }
+
+      match /votes/{userId} {
+        allow get: if isAuthenticated();
+        allow list: if isAuthenticated();
+        allow create: if isOwner(userId) && isValidSolutionVoteCreate(incoming()) && incoming().userId == userId;
+        allow update: if isOwner(userId) && incoming().userId == existing().userId && incoming().diff(existing()).affectedKeys().hasOnly(['type']);
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    match /savedSolutions/{savedSolutionId} {
+      allow get: if isOwner(resource.data.userId);
+      allow list: if isOwner(resource.data.userId);
+      allow create: if isAuthenticated() && isValidSavedSolutionCreate(incoming()) && incoming().userId == request.auth.uid;
+      allow update: if false;
+      allow delete: if isOwner(resource.data.userId);
+    }
+
+    match /reports/{reportId} {
+      allow get: if isAdmin() || isOwner(resource.data.reporterId);
+      allow list: if isAdmin();
+      allow create: if isAuthenticated() && isValidReportCreate(incoming()) && incoming().reporterId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── V4: Institutes / Exam Groups / Group Tests / Remarks / Attendance ──────
+    match /institutes/{instituteId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /examGroups/{groupId} {
+      allow read: if isAuthenticated();
+      allow create, delete: if isAdmin();
+      // Admin can edit anything; teachers/admin can add/remove students from studentIds.
+      allow update: if isAdmin() || isTeacher();
+    }
+
+    match /groupTests/{testId} {
+      allow read: if isAuthenticated();
+      allow create: if isTeacher() || isAdmin();
+      allow update, delete: if isAdmin() || (isTeacher() && existing().createdBy == request.auth.uid);
+    }
+
+    match /groupTestAttempts/{attemptId} {
+      allow get: if isAuthenticated();
+      allow list: if isAuthenticated();
+      allow create: if isAuthenticated() && incoming().studentId == request.auth.uid;
+      allow update: if isAdmin() || isTeacher(); // rank backfill only
+      allow delete: if isAdmin();
+    }
+
+    match /remarks/{remarkId} {
+      allow get: if isAdmin() || isTeacher() ||
+        (isSignedIn() && resource.data.studentId == request.auth.uid) ||
+        (isParentRole() && resource.data.isParentVisible == true);
+      allow list: if isAdmin() || isTeacher() || isSignedIn();
+      allow create: if isTeacher() || isAdmin();
+      allow update, delete: if isAdmin() || (isTeacher() && existing().teacherId == request.auth.uid);
+    }
+
+    match /attendance/{groupId}/records/{date} {
+      allow read: if isAuthenticated();
+      allow write: if isTeacher() || isAdmin();
+    }
+
+    match /platform/config {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /testAnalytics/{testId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Cloud Function (admin SDK) only.
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isTeacher() || isAdmin();
+      allow update, delete: if false; // append-only
+    }
+
+    // Invites: only an Admin creates them. The signed-up user looks theirs up by
+    // email and deletes it once consumed (see invitesDB.consumeInviteForEmail).
+    // NOTE: proper server-side role assignment (Cloud Function) is the hardened
+    // version of this — see PROJECT_MEMORY.md "Next phase: security".
+    match /invites/{inviteId} {
+      allow get, list: if isAuthenticated();
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.email == request.auth.token.email);
+    }
+ 
+    match /branches/{branchId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /batches/{batchId} {
+      allow read: if isAuthenticated();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || isTeacher();
+    }
+
+    match /notifications/{notifId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isAdmin() || isTeacher();
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    match /leaderboard/{uid} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isTeacher(); // Cloud Function updates in prod
+    }
+
+    match /studentAnalytics/{uid} {
+      allow read: if isOwner(uid) || isAdmin() || isTeacher();
+      allow write: if isOwner(uid) || isAdmin();
+    }
+
+    match /teacherAnalytics/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /instituteAnalytics/{instId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+  }
+}

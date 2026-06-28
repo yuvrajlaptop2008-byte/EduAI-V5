@@ -1,0 +1,143 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile data",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "rank": { "type": "number" },
+        "points": { "type": "number" },
+        "streak": { "type": "number" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "theme": { "type": "string", "enum": ["light", "dark", "system"] },
+        "notifications": { "type": "object" },
+        "profilePic": { "type": "string" },
+        "chapterProgress": { "type": "object" },
+        "dailyGoal": { "type": "number" },
+        "dailyTasks": { "type": "array" },
+        "tasksDate": { "type": "string" },
+        "lastCompletedDate": { "type": "string" }
+      },
+      "required": ["uid", "email", "name", "role", "points", "streak"]
+    },
+    "Activity": {
+      "title": "Activity",
+      "description": "Daily activity record for a user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "date": { "type": "string", "description": "YYYY-MM-DD" },
+        "questionsSolved": { "type": "number" },
+        "accuracy": { "type": "number" },
+        "timeSpent": { "type": "number" },
+        "pointsEarned": { "type": "number" }
+      },
+      "required": ["userId", "date", "questionsSolved", "accuracy", "timeSpent"]
+    },
+    "CommunitySolution": {
+      "title": "CommunitySolution",
+      "description": "A solution posted by a user for a specific question",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "questionId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "author": { "type": "string" },
+        "avatar": { "type": "string" },
+        "text": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "tag": { "type": "string" },
+        "isVerified": { "type": "boolean" },
+        "upvotes": { "type": "number" },
+        "downvotes": { "type": "number" },
+        "repliesCount": { "type": "number" },
+        "date": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "questionId", "authorId", "author", "text", "tag", "upvotes", "downvotes", "repliesCount", "date", "createdAt"]
+    },
+    "SolutionReply": {
+      "title": "SolutionReply",
+      "description": "A reply to a community solution",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "solutionId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "author": { "type": "string" },
+        "avatar": { "type": "string" },
+        "text": { "type": "string" },
+        "date": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "solutionId", "authorId", "author", "text", "date", "createdAt"]
+    },
+    "SolutionVote": {
+      "title": "SolutionVote",
+      "description": "A user's vote on a community solution",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "solutionId": { "type": "string" },
+        "type": { "type": "string", "enum": ["up", "down"] }
+      },
+      "required": ["userId", "solutionId", "type"]
+    },
+    "SavedSolution": {
+      "title": "SavedSolution",
+      "description": "A solution saved by a user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "solutionId": { "type": "string" },
+        "savedAt": { "type": "number" }
+      },
+      "required": ["userId", "solutionId", "savedAt"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "A report on a community solution",
+      "type": "object",
+      "properties": {
+        "solutionId": { "type": "string" },
+        "reporterId": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "reviewed", "resolved"] }
+      },
+      "required": ["solutionId", "reporterId", "createdAt", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "/users/{userId}/activity/{date}": {
+      "schema": { "$ref": "#/entities/Activity" },
+      "description": "User daily activity"
+    },
+    "/solutions/{solutionId}": {
+      "schema": { "$ref": "#/entities/CommunitySolution" },
+      "description": "Community solutions"
+    },
+    "/solutions/{solutionId}/replies/{replyId}": {
+      "schema": { "$ref": "#/entities/SolutionReply" },
+      "description": "Replies to community solutions"
+    },
+    "/solutions/{solutionId}/votes/{userId}": {
+      "schema": { "$ref": "#/entities/SolutionVote" },
+      "description": "Votes on community solutions"
+    },
+    "/savedSolutions/{savedSolutionId}": {
+      "schema": { "$ref": "#/entities/SavedSolution" },
+      "description": "Saved solutions"
+    },
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/Report" },
+      "description": "Reports on solutions"
+    }
+  }
+}

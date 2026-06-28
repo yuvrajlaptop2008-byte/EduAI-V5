@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#ff6b00" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="EduAI" />
+
+    <!-- SEO -->
+    <title>EduAI — JEE & NEET Prep Platform</title>
+    <meta name="description" content="The complete AI-powered platform for JEE Main, JEE Advanced & NEET preparation. Practice PYQs, take mock tests, track analytics, and get teacher feedback — all in one place. Free for all students." />
+    <meta name="keywords" content="JEE preparation, NEET preparation, JEE Main, JEE Advanced, mock test, PYQ, previous year questions, exam prep, IIT JEE, medical entrance" />
+    <meta name="robots" content="index, follow" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="EduAI — JEE & NEET Prep Platform" />
+    <meta property="og:description" content="AI-powered JEE & NEET preparation. Practice, tests, analytics, teacher tools. Free for all." />
+    <meta property="og:image" content="/og-image.png" />
+    <meta property="og:url" content="https://eduai.app" />
+    <meta property="og:site_name" content="EduAI" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="EduAI — JEE & NEET Prep Platform" />
+    <meta name="twitter:description" content="AI-powered JEE & NEET prep. Free for all students." />
+    <meta name="twitter:image" content="/og-image.png" />
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+
+    <!-- Structured data for Google -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "EducationalApplication",
+      "name": "EduAI",
+      "description": "AI-powered JEE and NEET preparation platform with PYQ practice, mock tests, analytics, and teacher tools.",
+      "applicationCategory": "EducationalApplication",
+      "operatingSystem": "Web, Android, iOS",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "INR" },
+      "educationalLevel": "Secondary Education",
+      "teaches": "JEE Main, JEE Advanced, NEET"
+    }
+    </script>
+  </head>
+  <body>
+    <noscript>EduAI requires JavaScript. Please enable it in your browser settings.</noscript>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(() => {});
+        });
+      }
+    </script>
+  </body>
+</html>

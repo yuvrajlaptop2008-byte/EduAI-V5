@@ -1,0 +1,5 @@
+{
+  "name": "Remix: Restored App ff",
+  "description": "An Android application built with Kotlin and Jetpack Compose for JEE/NEET study, featuring interactive Practice MCQs, DPP dashboards, analytics, and personal profiles.",
+  "requestFramePermissions": []
+}
