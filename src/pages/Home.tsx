@@ -40,7 +40,6 @@ import {
 } from"lucide-react";
 import { useUser } from"../context/UserContext";
 import Sidebar from"../components/Sidebar";
-import StudyTimer from "../components/StudyTimer";
 import { toast } from "sonner";
 
 const Home = () => {
@@ -617,10 +616,6 @@ const Home = () => {
           </div>
         </section>
 
-        {/* Study Timer */}
-        <section>
-          <StudyTimer />
-        </section>
 
         {/* Continue where you left off */}
         {lastAttempted && (
