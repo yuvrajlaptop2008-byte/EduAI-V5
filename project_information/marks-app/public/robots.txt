@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /teacher/
+Disallow: /parent/
+Disallow: /app/
+Sitemap: https://marksapp.io/sitemap.xml

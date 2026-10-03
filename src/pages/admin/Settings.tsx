@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Settings as SettingsIcon, Save, ShieldCheck, History } from "lucide-react";
 import { useUser } from "../../context/UserContext";
 import { logAudit, listRecentAuditLogs, type AuditLogEntry } from "../../services/auditLogDB";
-import { seedDemoData, seedLeaderboardFromAttempts } from "../../utils/seedDemoData";
+import { seedLeaderboardFromAttempts } from "../../utils/seedDemoData";
 
 export default function Settings() {
   const { user } = useUser();
@@ -14,9 +14,7 @@ export default function Settings() {
   const [requireQuestionReview, setRequireQuestionReview] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
-  const [seeding, setSeeding] = useState(false);
   const [rebuildingLB, setRebuildingLB] = useState(false);
-  const [seedResult, setSeedResult] = useState<string | null>(null);
 
   useEffect(() => {
     getDoc(doc(db, "platform", "config")).then((snap) => {
@@ -36,24 +34,6 @@ export default function Settings() {
     logAudit(user!.uid, user!.name, "settings.save", `Updated platform settings (review: ${requireQuestionReview}, maintenance: ${maintenanceMode})`);
     toast.success("Saved.");
     listRecentAuditLogs(20).then(setLogs);
-  };
-
-  const runSeed = async () => {
-    setSeeding(true);
-    setSeedResult(null);
-    try {
-      const result = await seedDemoData(user!.uid, user!.name);
-      if (result.skipped > 0) {
-        setSeedResult("Demo data already exists — nothing was changed.");
-      } else {
-        setSeedResult(`✅ Created ${result.created} demo records (institute, exam groups, 20 questions, 7 users).`);
-        logAudit(user!.uid, user!.name, "seed.demo", "Seeded demo data");
-        toast.success("Demo data seeded.");
-      }
-    } catch (e: any) {
-      setSeedResult("❌ Seed failed: " + (e?.message || "Unknown error"));
-      toast.error("Seed failed.");
-    } finally { setSeeding(false); }
   };
 
   if (!loaded) return <p className="text-slate-500">Loading…</p>;
@@ -78,12 +58,19 @@ export default function Settings() {
       </div>
 
       <div className="mt-6 pt-6 border-t border-slate-200 dark:border-white/10">
-        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Seed Demo Data</p>
-        <p className="text-xs text-slate-500 mb-3">Populates the platform with a sample institute, 4 exam groups, 20 questions, 2 teachers, and 5 students for testing and demos. Safe to run on an empty project.</p>
-        <button onClick={runSeed} disabled={seeding} className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 dark:border-white/10 text-sm font-medium disabled:opacity-50">
-          {seeding ? "Seeding…" : "🌱 Seed Demo Data"}
-        </button>
-        {seedResult && <p className="text-xs text-slate-600 dark:text-slate-300 mt-2">{seedResult}</p>}
+        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Add Real Question Bank Data</p>
+        <p className="text-xs text-slate-500 mb-3">Upload questions manually, import bulk question sheets via CSV, or parse official NTA exam papers via PDF import.</p>
+        <div className="flex gap-2">
+          <a href="/admin/import" className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-white text-sm font-semibold shadow-sm">
+            📄 CSV Bulk Import
+          </a>
+          <a href="/admin/import/pdf" className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 dark:border-white/10 text-sm font-medium text-slate-700 dark:text-slate-200">
+            📑 PDF Question Parser
+          </a>
+          <a href="/teacher/upload" className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 dark:border-white/10 text-sm font-medium text-slate-700 dark:text-slate-200">
+            ✍️ Manual Uploader
+          </a>
+        </div>
       </div>
 
       <div className="mt-4 pt-4 border-t border-slate-200 dark:border-white/10">

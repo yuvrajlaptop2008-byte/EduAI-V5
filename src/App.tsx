@@ -1,4 +1,5 @@
-import { useEffect, lazy, Suspense } from "react";
+import { useEffect, Suspense } from "react";
+import { lazyRetry as lazy } from "./utils/lazyRetry";
 import { syncQuestionsFromFirestore } from "./utils/questionBank";
 import {
   BrowserRouter as Router,
@@ -21,7 +22,7 @@ import Onboarding from "./pages/Onboarding";
 import { useUser } from "./context/UserContext";
 import { normalizeRole, ROLE_HOME } from "./utils/roles";
 
-// Route-level code splitting — these are not needed on first paint.
+// Route-level code splitting with automatic stale chunk reload recovery
 const Tests = lazy(() => import("./pages/Tests"));
 const NotebookHome = lazy(() => import("./modules/notebook/NotebookHome"));
 const AddNote = lazy(() => import("./modules/notebook/AddNote"));

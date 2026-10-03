@@ -1,0 +1,52 @@
+# EduAI Relational Schema for Firebase SQL Connect (Cloud SQL / PostgreSQL)
+
+type User @table(key: "uid") {
+  uid: String! @default(expr: "auth.uid")
+  email: String! @unique
+  displayName: String
+  role: String!
+  targetExam: String
+  targetYear: Int
+  streakCount: Int
+  totalPoints: Int
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+type Institute @table {
+  id: UUID! @default(expr: "uuidV4()")
+  name: String!
+  code: String! @unique
+  slug: String
+  contactEmail: String
+  isActive: Boolean!
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+type Batch @table {
+  id: UUID! @default(expr: "uuidV4()")
+  institute: Institute!
+  name: String!
+  code: String
+  examTarget: String!
+  academicYear: String!
+  isActive: Boolean!
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+type BatchEnrollment @table(key: ["batch", "user"]) {
+  batch: Batch!
+  user: User!
+  enrolledAt: Timestamp! @default(expr: "request.time")
+  status: String!
+}
+
+type PerformanceSummary @table {
+  id: UUID! @default(expr: "uuidV4()")
+  user: User!
+  examTarget: String!
+  totalTests: Int!
+  averageScore: Float!
+  rank: Int
+  percentile: Float
+  updatedAt: Timestamp! @default(expr: "request.time")
+}

@@ -1,0 +1,11 @@
+specVersion: "v1"
+serviceId: "eduai-sql"
+location: "us-central1"
+schema:
+  source: "./schema"
+  datasource:
+    postgresql:
+      database: "eduai_relational"
+      cloudSql:
+        instanceId: "eduai-postgres"
+connectorDirs: ["./connector"]

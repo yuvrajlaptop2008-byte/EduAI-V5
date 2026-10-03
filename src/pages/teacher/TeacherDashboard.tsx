@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { motion } from "motion/react";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../../firebase";
+import { dataService } from "../../services/dataService";
 import { useUser } from "../../context/UserContext";
 import { listTestsByTeacher, listAttemptsForTest } from "../../services/groupTestsDB";
 import { listExamGroups } from "../../services/examGroupsDB";
@@ -28,12 +29,12 @@ export default function TeacherDashboard() {
   useEffect(() => {
     if (!user) return;
     const load = async () => {
-      const [qSnap, teacherTests, examGroups] = await Promise.all([
-        getDocs(collection(db, "custom_questions")),
+      const [count, teacherTests, examGroups] = await Promise.all([
+        dataService.getQuestionCount(),
         listTestsByTeacher(user.uid),
         listExamGroups(user.instituteId || undefined),
       ]);
-      setQuestionCount(qSnap.size);
+      setQuestionCount(count);
       setTests(teacherTests);
       setGroups(examGroups);
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { doc, setDoc, getDoc } from "firebase/firestore";
 import { db } from "../../firebase";
+import { dataService } from "../../services/dataService";
 import { useUser } from "../../context/UserContext";
 import { toast } from "sonner";
 import { Plus, PencilLine } from "lucide-react";
@@ -70,10 +71,20 @@ function ManualForm({ extraFields, requireReview }: { extraFields: Record<string
     setSaving(true);
     try {
       const id = Date.now();
-      await setDoc(doc(db, "custom_questions", id.toString()), {
-        id, subject, chapter, topic, difficulty, text, options, correctAnswer, solution, exam, language, tags: tags.split(",").map(t=>t.trim()).filter(Boolean), communitySolutions: [],
+      await dataService.saveQuestion({
+        id,
+        subject,
+        chapter,
+        topic: topic || chapter,
+        difficulty,
+        text,
+        options,
+        correctAnswer,
+        solution,
+        exam,
         ...extraFields,
       });
+
       toast.success(requireReview ? "Submitted for admin review." : "Question added to the bank.");
       reset();
     } catch (e: any) {

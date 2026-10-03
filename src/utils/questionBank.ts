@@ -1,56 +1,51 @@
 import { db } from "../firebase";
 import { collection, getDocs, doc, setDoc, deleteDoc } from "firebase/firestore";
+import { notifyQuestionBankChanged } from "../services/dataService";
 
-// Sync questions from Firestore to localStorage
+// Sync questions prioritizing MongoDB + Redis Cache to eliminate Firestore read fees
 export async function syncQuestionsFromFirestore() {
+  // 1. Try high-performance backend API first (served from Redis Cache -> MongoDB Atlas with 0 Firestore reads)
   try {
-    let querySnapshot = await getDocs(collection(db, "custom_questions"));
-    
-    if (querySnapshot.empty) {
-      console.log("Seeding default custom questions to Firestore...");
-      const DEFAULT_CUSTOM_QUESTIONS: Question[] = [
-        {
-          id: 901,
-          subject: "Physics",
-          chapter: "Current Electricity",
-          difficulty: "Medium",
-          text: "A copper wire of length 2m and cross-sectional area 1 mm² is connected to a 3V battery. If the resistivity of copper is 1.7 × 10⁻⁸ Ω·m, find the current flowing through the wire.",
-          options: ["44.1 A", "88.2 A", "22.0 A", "11.0 A"],
-          correctAnswer: 1,
-          solution: "Resistance R = ρ * L / A = 1.7 × 10⁻⁸ × 2 / 10⁻⁶ = 0.034 Ω.\nCurrent I = V / R = 3 / 0.034 ≈ 88.2 A. Hence, option B is correct.",
-          communitySolutions: []
-        },
-        {
-          id: 902,
-          subject: "Chemistry",
-          chapter: "Electrochemistry",
-          difficulty: "Hard",
-          text: "For the cell reaction Fe(s) + 2H⁺(aq) → Fe²⁺(aq) + H₂(g), the E°cell is 0.44 V. If the pH of the anode compartment is 3.0 and the Fe²⁺ concentration is 0.1 M, the EMF of the cell at 298 K is:",
-          options: ["0.35 V", "0.29 V", "0.53 V", "0.41 V"],
-          correctAnswer: 1,
-          solution: "Using Nernst Equation: E = E° - (0.0591 / n) * log([Fe²⁺] / [H⁺]²).\nHere, [H⁺] = 10⁻³ M, n = 2.\nE = 0.44 - (0.0591 / 2) * log(0.1 / (10⁻³)²)\nE = 0.44 - 0.0295 * log(0.1 / 10⁻⁶) = 0.44 - 0.0295 * 5 = 0.44 - 0.1475 = 0.2925 V ≈ 0.29 V.",
-          communitySolutions: []
-        }
-      ];
-      
-      for (const q of DEFAULT_CUSTOM_QUESTIONS) {
-        try {
-          await setDoc(doc(db, "custom_questions", q.id.toString()), q);
-        } catch (seedErr) {
-          console.error("Failed to seed custom question to Firestore:", q.id, seedErr);
-        }
+    const res = await fetch("http://localhost:5050/api/questions?limit=100");
+    if (res.ok) {
+      const data = await res.json();
+      if (data.questions && data.questions.length > 0) {
+        const mapped: Question[] = data.questions.map((q: any) => ({
+          id: q.id || Math.floor(Math.random() * 100000),
+          subject: q.subject || "Physics",
+          chapter: q.chapter || "General",
+          difficulty: q.difficulty || "Medium",
+          text: q.text || "",
+          options: Array.isArray(q.options)
+            ? q.options.map((o: any) => (typeof o === "string" ? o : o.text || ""))
+            : [],
+          correctAnswer: q.correctAnswer ?? 0,
+          solution: q.solution || "",
+          communitySolutions: [],
+          exam: q.exam || "JEE_MAIN",
+          year: q.year,
+          status: q.status || "active",
+        }));
+        localStorage.setItem("custom_questions", JSON.stringify(mapped));
+        console.log("[DataService] Synced questions from MongoDB + Redis Cache (0 Firestore reads):", mapped.length);
+        return;
       }
-      querySnapshot = await getDocs(collection(db, "custom_questions"));
     }
+  } catch (apiErr) {
+    // Backend API offline or unreachable, fall back to Firestore
+  }
 
+  // 2. Fallback to Firestore with error resilience
+  try {
+    const querySnapshot = await getDocs(collection(db, "custom_questions"));
     const questions: Question[] = [];
     querySnapshot.forEach((doc) => {
       questions.push(doc.data() as Question);
     });
     localStorage.setItem("custom_questions", JSON.stringify(questions));
-    console.log("Synced custom questions from Firestore:", questions.length);
+    console.log("Synced custom questions from Firestore fallback:", questions.length);
   } catch (e) {
-    console.error("Failed to sync custom questions from Firestore:", e);
+    console.warn("Firestore sync skipped or offline:", e);
   }
 }
 
@@ -246,10 +241,29 @@ export function addCustomQuestion(q: Omit<Question, "communitySolutions">) {
   const newQ = { ...q, communitySolutions: [] };
   list.push(newQ);
   localStorage.setItem("custom_questions", JSON.stringify(list));
+  notifyQuestionBankChanged();
   
-  // Async background sync to Firestore
-  setDoc(doc(db, "custom_questions", newQ.id.toString()), newQ).catch(err => {
-    console.error("Failed to sync new question to Firestore:", err);
+  // 1. Dual-write to MongoDB (Permanent document storage, $0 per-read fees)
+  fetch("http://localhost:5050/api/questions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text: newQ.text,
+      options: newQ.options.map((opt) => ({ text: opt })),
+      correctAnswer: newQ.correctAnswer,
+      subject: newQ.subject,
+      chapter: newQ.chapter,
+      difficulty: newQ.difficulty,
+      solution: newQ.solution,
+      exam: newQ.exam || "JEE_MAIN",
+      year: newQ.year,
+      status: newQ.status || "active",
+    }),
+  }).catch(() => {});
+
+  // 2. Async background mirror to Firestore
+  setDoc(doc(db, "custom_questions", newQ.id.toString()), newQ).catch((err) => {
+    console.warn("Firestore sync warning:", err);
   });
 }
 
@@ -257,10 +271,14 @@ export function removeCustomQuestion(id: number | string) {
   let list = getCustomQuestions();
   list = list.filter((q) => q.id.toString() !== id.toString());
   localStorage.setItem("custom_questions", JSON.stringify(list));
+  notifyQuestionBankChanged();
 
-  // Async background delete from Firestore
-  deleteDoc(doc(db, "custom_questions", id.toString())).catch(err => {
-    console.error("Failed to delete question from Firestore:", err);
+  // 1. Delete from MongoDB
+  fetch(`http://localhost:5050/api/questions/${id}`, { method: "DELETE" }).catch(() => {});
+
+  // 2. Delete from Firestore
+  deleteDoc(doc(db, "custom_questions", id.toString())).catch((err) => {
+    console.warn("Firestore delete warning:", err);
   });
 }
 
@@ -273,6 +291,7 @@ export function updateCustomQuestion(updatedQ: Question) {
     list.push(updatedQ); // Save as new override/custom question
   }
   localStorage.setItem("custom_questions", JSON.stringify(list));
+  notifyQuestionBankChanged();
 
   // Async background sync to Firestore
   setDoc(doc(db, "custom_questions", updatedQ.id.toString()), updatedQ).catch(err => {

@@ -1,0 +1,38 @@
+mutation UpsertUserProfile(
+  $displayName: String,
+  $role: String!,
+  $targetExam: String,
+  $targetYear: Int
+) @auth(level: USER) {
+  user_upsert(data: {
+    uid_expr: "auth.uid",
+    email_expr: "auth.token.email",
+    displayName: $displayName,
+    role: $role,
+    targetExam: $targetExam,
+    targetYear: $targetYear
+  })
+}
+
+mutation CreateInstitute(
+  $name: String!,
+  $code: String!,
+  $slug: String,
+  $contactEmail: String
+) @auth(level: USER, insecureReason: "Teacher or Admin registering a new coaching institute") {
+  institute_insert(data: {
+    name: $name,
+    code: $code,
+    slug: $slug,
+    contactEmail: $contactEmail,
+    isActive: true
+  })
+}
+
+mutation EnrollStudentInBatch($batchId: UUID!) @auth(level: USER) {
+  batchEnrollment_insert(data: {
+    batch: { id: $batchId },
+    user: { uid_expr: "auth.uid" },
+    status: "active"
+  })
+}

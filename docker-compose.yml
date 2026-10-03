@@ -1,0 +1,68 @@
+services:
+  # 1. PostgreSQL — Relational & Analytics Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: marks_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-postgres}
+      POSTGRES_DB: ${PG_DATABASE:-marks_app_db}
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./server/src/db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-postgres} -d ${PG_DATABASE:-marks_app_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 2. Redis — In-Memory High-Speed Cache & Realtime Leaderboards
+  redis:
+    image: redis:7-alpine
+    container_name: marks_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 3. Enterprise Express Backend API
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: marks_backend
+    restart: unless-stopped
+    ports:
+      - "${PORT:-5050}:5050"
+    environment:
+      NODE_ENV: production
+      PORT: 5050
+      MONGODB_URI: ${MONGODB_URI:-mongodb+srv://yuvrajlaptop2008_db_user:fwiRnAOWord88J5M@cluster0.gw4fnan.mongodb.net/marksapp_questions?retryWrites=true&w=majority}
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_USER: ${PG_USER:-postgres}
+      PG_PASSWORD: ${PG_PASSWORD:-postgres}
+      PG_DATABASE: ${PG_DATABASE:-marks_app_db}
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGIN: "*"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local

@@ -1,0 +1,53 @@
+query ListInstitutes @auth(level: PUBLIC, insecureReason: "Public directory query for all active institutes") {
+  institutes(orderBy: [{ name: ASC }]) {
+    id
+    name
+    code
+    slug
+    contactEmail
+    isActive
+  }
+}
+
+query GetUserProfile @auth(level: USER) {
+  user(key: { uid_expr: "auth.uid" }) {
+    uid
+    email
+    displayName
+    role
+    targetExam
+    targetYear
+    streakCount
+    totalPoints
+    createdAt
+  }
+}
+
+query ListBatches($instituteId: UUID!) @auth(level: PUBLIC, insecureReason: "Publicly visible institute batch schedules") {
+  batches(where: { institute: { id: { eq: $instituteId }}}) {
+    id
+    name
+    code
+    examTarget
+    academicYear
+    isActive
+  }
+}
+
+query GetTopPerformers($examTarget: String!) @auth(level: PUBLIC, insecureReason: "Public exam leaderboard") {
+  performanceSummaries(
+    where: { examTarget: { eq: $examTarget }},
+    orderBy: [{ percentile: DESC }],
+    limit: 50
+  ) {
+    id
+    averageScore
+    rank
+    percentile
+    user {
+      uid
+      displayName
+      email
+    }
+  }
+}

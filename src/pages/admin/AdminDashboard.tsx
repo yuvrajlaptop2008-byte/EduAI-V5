@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { collection, getDocs, orderBy, limit, query } from "firebase/firestore";
 import { db } from "../../firebase";
+import { dataService } from "../../services/dataService";
 import { Link } from "react-router-dom";
 import StatCard from "../../components/layout/StatCard";
 import { SkeletonStatCards } from "../../components/Skeleton";
@@ -21,10 +22,11 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     (async () => {
-      const [institutes, users, questions, tests, attempts] = await Promise.all([
+      const [institutes, users, qData, qCount, tests, attempts] = await Promise.all([
         listInstitutes(),
         getDocs(collection(db, "users")),
-        getDocs(collection(db, "custom_questions")),
+        dataService.getQuestions({ limit: 50 }),
+        dataService.getQuestionCount(),
         getDocs(collection(db, "groupTests")),
         getDocs(query(collection(db, "groupTestAttempts"), orderBy("submittedAt", "desc"), limit(5))),
       ]);
@@ -37,9 +39,18 @@ export default function AdminDashboard() {
         else if (r !== "admin") students++;
       });
 
-      const pending = Array.from(questions.docs).filter(d => (d.data() as any).status === "pending").length;
+      const pending = qData.questions.filter(q => q.status === "pending").length;
 
-      setCounts({ institutes: institutes.length, students, teachers, parents, questions: questions.size, tests: tests.size, attempts: (await getDocs(collection(db, "groupTestAttempts"))).size, pending });
+      setCounts({
+        institutes: institutes.length,
+        students,
+        teachers,
+        parents,
+        questions: qCount || qData.questions.length,
+        tests: tests.size,
+        attempts: attempts.size,
+        pending
+      });
 
       setRecentAttempts(attempts.docs.map(d => {
         const a = d.data() as any;

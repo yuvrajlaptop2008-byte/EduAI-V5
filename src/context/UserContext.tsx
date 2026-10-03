@@ -156,10 +156,10 @@ interface UserContextType {
   setTasks: (tasks: DailyTask[]) => void;
   loginWithGoogle: () => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
-  signupWithEmail: (email: string, pass: string, name: string) => Promise<void>;
+  signupWithEmail: (email: string, pass: string, name: string, chosenRole?: string) => Promise<void>;
   forgotPassword: (email: string) => Promise<void>;
   changePassword: (newPassword: string) => Promise<void>;
-  loginAnonymously: () => Promise<void>;
+  loginAnonymously: (asRole?: string) => Promise<void>;
 
   logout: () => Promise<void>;
   saveActivity: (
@@ -512,9 +512,19 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
       if (firebaseUser) {
         try {
           const userDocRef = doc(db, "users", firebaseUser.uid);
-          const userDoc = await getDoc(userDocRef);
+          let userDocSnap;
+          try {
+            userDocSnap = await getDoc(userDocRef);
+          } catch (docErr) {
+            console.warn("Could not get user doc from Firestore:", docErr);
+          }
 
-          if (!userDoc.exists()) {
+          const guestRoleOverride = firebaseUser.isAnonymous ? (localStorage.getItem("eduai_guest_role") || "student") : null;
+          let currentRole = guestRoleOverride || "user";
+          let currentName = firebaseUser.displayName || (firebaseUser.isAnonymous ? (guestRoleOverride === "admin" ? "Guest Admin" : "Guest Student") : "Student");
+          let currentEmail = firebaseUser.email || (firebaseUser.isAnonymous ? "guest@eduai.app" : "no-email@example.com");
+
+          if (!userDocSnap || !userDocSnap.exists()) {
             const localSessionId = localStorage.getItem("mark_session_id") || Math.random().toString(36).substring(2) + Date.now().toString(36);
             if (!localStorage.getItem("mark_session_id")) {
               localStorage.setItem("mark_session_id", localSessionId);
@@ -524,16 +534,17 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
               const { consumeInviteForEmail } = await import("../services/invitesDB");
               invite = await consumeInviteForEmail(firebaseUser.email || "");
             } catch {
-              // No invite system reachable yet (e.g. offline) — fall back to default student role below.
+              // No invite system reachable yet
             }
+            currentRole = guestRoleOverride || invite?.role || "user";
             const newUser = {
               uid: firebaseUser.uid,
-              email: firebaseUser.email || "no-email@example.com",
-              name: firebaseUser.displayName || "Student",
+              email: currentEmail,
+              name: currentName,
               rank: 1000,
               points: 0,
               streak: 0,
-              role: invite?.role || "user",
+              role: currentRole,
               instituteId: invite?.instituteId || null,
               examGroupId: invite?.examGroupId || null,
               linkedStudentIds: invite?.linkedStudentIds || [],
@@ -542,22 +553,31 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
             };
             try {
               await setDoc(userDocRef, newUser);
-              // Also create public profile
               await setDoc(doc(db, "users_public", firebaseUser.uid), {
                 uid: firebaseUser.uid,
                 name: newUser.name,
                 points: newUser.points,
                 rank: newUser.rank,
               });
-            } catch (error) {
-              handleFirestoreError(
-                error,
-                OperationType.CREATE,
-                `users/${firebaseUser.uid}`,
-              );
+            } catch (createErr) {
+              console.warn("Could not write new user doc to Firestore:", createErr);
             }
+
+            setUser({
+              uid: newUser.uid,
+              email: newUser.email,
+              name: newUser.name,
+              role: newUser.role,
+              instituteId: newUser.instituteId,
+              examGroupId: newUser.examGroupId,
+              linkedStudentIds: newUser.linkedStudentIds,
+            });
+            setLoading(false);
           } else {
-            const data = userDoc.data();
+            const data = userDocSnap.data();
+            currentRole = guestRoleOverride || data.role || "user";
+            currentName = data.name || currentName;
+            currentEmail = data.email || currentEmail;
 
             // Single login single device check
             if (!firebaseUser.isAnonymous) {
@@ -578,7 +598,11 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
                 if (!localSessionId) {
                   localStorage.setItem("mark_session_id", newSessionId);
                 }
-                await setDoc(userDocRef, { sessionId: newSessionId }, { merge: true });
+                try {
+                  await setDoc(userDocRef, { sessionId: newSessionId }, { merge: true });
+                } catch (sessErr) {
+                  console.warn("Could not save session ID to Firestore:", sessErr);
+                }
               }
             }
 
@@ -593,8 +617,36 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
               data.lastCompletedDate !== yesterdayStr
             ) {
               // Streak broken
-              await setDoc(userDocRef, { streak: 0 }, { merge: true });
+              try {
+                await setDoc(userDocRef, { streak: 0 }, { merge: true });
+              } catch (stkErr) {
+                console.warn("Could not reset streak:", stkErr);
+              }
             }
+
+            setUser({
+              uid: data.uid || firebaseUser.uid,
+              email: currentEmail,
+              name: currentName,
+              role: currentRole,
+              instituteId: data.instituteId || null,
+              examGroupId: data.examGroupId || null,
+              linkedStudentIds: data.linkedStudentIds || [],
+            });
+            setPointsEarned(data.points || 0);
+            setStreak(data.streak || 0);
+            setUserRank(data.rank !== undefined ? data.rank : 1000);
+            setAccuracy(data.accuracy || 0);
+            setTotalAttempts(data.totalAttempts || 0);
+            setTotalCorrect(data.totalCorrect || 0);
+            if (data.theme) setThemeState(data.theme);
+            if (data.notifications) setNotificationsState(data.notifications);
+            if (data.profilePic) setProfilePicState(data.profilePic);
+            if (data.chapterProgress) setChapterProgress(data.chapterProgress);
+            if (data.dailyGoal) setDailyGoalLocal(data.dailyGoal);
+            if (data.field) setFieldState(data.field);
+            setOnboardedState(data.onboarded ?? true);
+            setLoading(false);
           }
 
           // Listen to user document changes
@@ -661,11 +713,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
               }
             },
             (error) => {
-              handleFirestoreError(
-                error,
-                OperationType.GET,
-                `users/${firebaseUser.uid}`,
-              );
+              console.warn("User doc snapshot error:", error);
             },
           );
 
@@ -690,11 +738,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
               }
             },
             (error) => {
-              handleFirestoreError(
-                error,
-                OperationType.GET,
-                `users/${firebaseUser.uid}/activity/${dateStr}`,
-              );
+              console.warn("Activity snapshot error:", error);
             },
           );
 
@@ -712,7 +756,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
               }
             },
             (error) => {
-              console.error("Error listening to attempts:", error);
+              console.warn("Error listening to attempts:", error);
             }
           );
 
@@ -721,44 +765,65 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
           thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
           const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split("T")[0];
 
-          const { collection, query, where } =
-            await import("firebase/firestore");
-          const activityQuery = query(
-            collection(db, `users/${firebaseUser.uid}/activity`),
-            where("date",">=", thirtyDaysAgoStr),
-          );
+          try {
+            const { collection, query, where } =
+              await import("firebase/firestore");
+            const activityQuery = query(
+              collection(db, `users/${firebaseUser.uid}/activity`),
+              where("date", ">=", thirtyDaysAgoStr),
+            );
 
-          unsubHistory = onSnapshot(
-            activityQuery,
-            (snapshot) => {
-              const history: string[] = [];
-              snapshot.forEach((doc) => {
-                const data = doc.data();
-                // Assuming goal is met if questionsSolved >= dailyGoal
-                // Since we don't have historical daily goals, we'll use the current one or a threshold
-                if (data.questionsSolved > 0) {
-                  history.push(data.date);
-                }
-              });
-              setActivityHistory(history);
-            },
-            (error) => {
-              handleFirestoreError(
-                error,
-                OperationType.LIST,
-                `users/${firebaseUser.uid}/activity`,
-              );
-            },
-          );
+            unsubHistory = onSnapshot(
+              activityQuery,
+              (snapshot) => {
+                const history: string[] = [];
+                snapshot.forEach((doc) => {
+                  const data = doc.data();
+                  if (data.questionsSolved > 0) {
+                    history.push(data.date);
+                  }
+                });
+                setActivityHistory(history);
+              },
+              (error) => {
+                console.warn("Activity history snapshot error:", error);
+              },
+            );
+          } catch (histErr) {
+            console.warn("Could not query activity history:", histErr);
+          }
 
           setLoading(false);
         } catch (error) {
-          console.error("Error fetching user data", error);
+          console.error("Error fetching user data, setting fallback authenticated user:", error);
+          setUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email || (firebaseUser.isAnonymous ? "guest@eduai.app" : "student@eduai.app"),
+            name: firebaseUser.displayName || (firebaseUser.isAnonymous ? "Guest Student" : "Student"),
+            role: "user",
+            instituteId: null,
+            examGroupId: null,
+            linkedStudentIds: [],
+          });
           setLoading(false);
         }
       } else {
-        setUser(null);
-        setLoading(false);
+        if (localStorage.getItem("eduai_guest_mode") === "true") {
+          const guestUid = localStorage.getItem("eduai_guest_uid") || "guest_demo";
+          setUser({
+            uid: guestUid,
+            email: "guest@eduai.app",
+            name: "Guest Student",
+            role: "user",
+            instituteId: null,
+            examGroupId: null,
+            linkedStudentIds: [],
+          });
+          setLoading(false);
+        } else {
+          setUser(null);
+          setLoading(false);
+        }
       }
     });
 
@@ -774,18 +839,18 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
       prompt: "select_account",
     });
     try {
-      const userCredential = await signInWithPopup(auth, provider);
+      await signInWithPopup(auth, provider);
       const session_id = Math.random().toString(36).substring(2) + Date.now().toString(36);
       localStorage.setItem("mark_session_id", session_id);
-      await setDoc(doc(db, "users", userCredential.user.uid), { sessionId: session_id }, { merge: true });
     } catch (error: any) {
       console.error("Error signing in with Google", error);
       if (
+        error.code === "auth/popup-blocked" ||
+        error.code === "auth/cancelled-popup-request" ||
         error.code === "auth/network-request-failed" ||
         error.code === "auth/internal-error"
       ) {
-        console.log("Falling back to signInWithRedirect due to iframe/cookie restrictions...",
-        );
+        console.log("Falling back to signInWithRedirect due to popup restrictions...");
         await signInWithRedirect(auth, provider);
       } else {
         throw error;
@@ -795,10 +860,9 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const loginWithEmail = async (email: string, pass: string) => {
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, pass);
+      await signInWithEmailAndPassword(auth, email, pass);
       const session_id = Math.random().toString(36).substring(2) + Date.now().toString(36);
       localStorage.setItem("mark_session_id", session_id);
-      await setDoc(doc(db, "users", userCredential.user.uid), { sessionId: session_id }, { merge: true });
     } catch (error: any) {
       if (error.code === "auth/operation-not-allowed") {
         throw new Error("Email/Password authentication is not enabled. Please enable it in the Firebase Console under Authentication > Sign-in method.",
@@ -808,7 +872,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const signupWithEmail = async (email: string, pass: string, name: string) => {
+  const signupWithEmail = async (email: string, pass: string, name: string, chosenRole: string = "student") => {
     try {
       const userCredential = await createUserWithEmailAndPassword(
         auth,
@@ -824,7 +888,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
       const userDocRef = doc(db, "users", userCredential.user.uid);
       // Try the server-verified assignRole Cloud Function first (deployed).
       // Falls back to client-side invite consumption if Functions not yet deployed.
-      let roleFields = { role: "user", instituteId: null as string | null, examGroupId: null as string | null, linkedStudentIds: [] as string[] };
+      let roleFields = { role: chosenRole, instituteId: null as string | null, examGroupId: null as string | null, linkedStudentIds: [] as string[] };
       try {
         const { httpsCallable } = await import("firebase/functions");
         const { functions } = await import("../firebase");
@@ -836,7 +900,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
           const { consumeInviteForEmail } = await import("../services/invitesDB");
           const invite = await consumeInviteForEmail(email);
           if (invite) roleFields = { role: invite.role, instituteId: invite.instituteId, examGroupId: invite.examGroupId, linkedStudentIds: invite.linkedStudentIds };
-        } catch { /* offline or no invite — defaults to student */ }
+        } catch { /* offline or no invite — keeps chosenRole */ }
       }
       const newUser = {
         uid: userCredential.user.uid,
@@ -874,24 +938,50 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const loginAnonymously = async () => {
+  const loginAnonymously = async (asRole: string = "student") => {
+    localStorage.setItem("eduai_guest_role", asRole);
     try {
       await signInAnonymously(auth);
-    } catch (error) {
+      localStorage.removeItem("eduai_guest_mode");
+      localStorage.removeItem("eduai_guest_uid");
+    } catch (error: any) {
+      if (
+        error.code === "auth/admin-restricted-operation" ||
+        error.code === "auth/operation-not-allowed" ||
+        error.code === "auth/configuration-not-found"
+      ) {
+        console.warn("Firebase Anonymous Auth restricted; activating local Guest session...");
+        const guestUid = "guest_" + Math.random().toString(36).substring(2, 10);
+        localStorage.setItem("eduai_guest_mode", "true");
+        localStorage.setItem("eduai_guest_uid", guestUid);
+        setUser({
+          uid: guestUid,
+          email: "guest@eduai.app",
+          name: asRole === "admin" ? "Guest Admin" : asRole === "teacher" ? "Guest Teacher" : "Guest Student",
+          role: asRole,
+          instituteId: null,
+          examGroupId: null,
+          linkedStudentIds: [],
+        });
+        setLoading(false);
+        return;
+      }
       console.error("Error signing in anonymously:", error);
       throw error;
     }
   };
 
-  // Removed loginAsDemoAdmin method
-
   const logout = async () => {
     try {
       localStorage.removeItem("mark_session_id");
+      localStorage.removeItem("eduai_guest_mode");
+      localStorage.removeItem("eduai_guest_uid");
+      localStorage.removeItem("eduai_guest_role");
       await signOut(auth);
       setUser(null);
     } catch (error) {
       console.error("Error signing out", error);
+      setUser(null);
     }
   };
 

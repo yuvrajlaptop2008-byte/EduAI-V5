@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { collection, getDocs, doc, deleteDoc, setDoc } from "firebase/firestore";
 import { db } from "../../firebase";
+import { dataService } from "../../services/dataService";
 import type { Question } from "../../utils/questionBank";
-import { Trash2, Pencil, X, Check, FileQuestion, Search, ShieldAlert, ShieldCheck, ShieldX } from "lucide-react";
+import { Trash2, Pencil, X, Check, FileQuestion, Search, ShieldAlert, ShieldCheck, ShieldX, Plus } from "lucide-react";
 import { toast } from "sonner";
 import StatCard from "../../components/layout/StatCard";
 import { logAudit } from "../../services/auditLogDB";
@@ -20,7 +21,30 @@ export default function QuestionBank() {
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "active" | "rejected">("all");
   const [languageFilter, setLanguageFilter] = useState("all");
 
-  const load = () => { getDocs(collection(db, "custom_questions")).then((s) => setQuestions(s.docs.map((d) => d.data() as Question))); };
+  // Add Question State
+  const [isAdding, setIsAdding] = useState(false);
+  const [newSubject, setNewSubject] = useState("Physics");
+  const [newChapter, setNewChapter] = useState("");
+  const [newDifficulty, setNewDifficulty] = useState<"Easy" | "Medium" | "Hard">("Medium");
+  const [newExam, setNewExam] = useState("JEE_MAIN");
+  const [newText, setNewText] = useState("");
+  const [newOptions, setNewOptions] = useState(["", "", "", ""]);
+  const [newCorrectAnswer, setNewCorrectAnswer] = useState(0);
+  const [newSolution, setNewSolution] = useState("");
+
+  const resetNewForm = () => {
+    setNewChapter("");
+    setNewText("");
+    setNewOptions(["", "", "", ""]);
+    setNewCorrectAnswer(0);
+    setNewSolution("");
+  };
+
+  const load = () => {
+    dataService.getQuestions({ limit: 200 }).then((res) => {
+      setQuestions(res.questions);
+    });
+  };
   useEffect(load, []);
 
   const subjects = useMemo(() => ["All", ...Array.from(new Set(questions.map((q) => q.subject)))], [questions]);
@@ -37,14 +61,14 @@ export default function QuestionBank() {
   const pendingCount = questions.filter((q) => q.status === "pending").length;
 
   const remove = async (id: number) => {
-    await deleteDoc(doc(db, "custom_questions", id.toString()));
+    await dataService.deleteQuestion(id);
     logAudit(user!.uid, user!.name, "question.delete", `Deleted question #${id}`);
     toast.success("Question removed.");
     load();
   };
 
   const bulkDelete = async () => {
-    await Promise.all(Array.from(selected).map((id) => deleteDoc(doc(db, "custom_questions", id.toString()))));
+    await Promise.all(Array.from(selected).map((id) => dataService.deleteQuestion(id)));
     logAudit(user!.uid, user!.name, "question.bulkDelete", `Deleted ${selected.size} questions`);
     toast.success(`${selected.size} questions removed.`);
     setSelected(new Set());
@@ -59,7 +83,7 @@ export default function QuestionBank() {
 
   const saveEdit = async () => {
     if (!editing) return;
-    await setDoc(doc(db, "custom_questions", editing.id.toString()), editing);
+    await dataService.saveQuestion(editing);
     logAudit(user!.uid, user!.name, "question.edit", `Edited question #${editing.id}`);
     toast.success("Question updated.");
     setEditing(null);
@@ -67,9 +91,36 @@ export default function QuestionBank() {
   };
 
   const moderate = async (q: Question, status: "active" | "rejected") => {
-    await setDoc(doc(db, "custom_questions", q.id.toString()), { ...q, status });
+    await dataService.saveQuestion({ ...q, status });
     logAudit(user!.uid, user!.name, `question.${status === "active" ? "approve" : "reject"}`, `${status === "active" ? "Approved" : "Rejected"} question #${q.id} from ${q.uploadedByName || "unknown"}`);
     toast.success(status === "active" ? "Approved." : "Rejected.");
+    load();
+  };
+
+  const createQuestion = async () => {
+    if (!newText.trim() || !newChapter.trim() || newOptions.some((o) => !o.trim())) {
+      toast.error("Please fill chapter, question text and all 4 options.");
+      return;
+    }
+    const id = Date.now();
+    await dataService.saveQuestion({
+      id,
+      subject: newSubject,
+      chapter: newChapter,
+      difficulty: newDifficulty,
+      text: newText,
+      options: newOptions,
+      correctAnswer: newCorrectAnswer,
+      solution: newSolution,
+      exam: newExam,
+      status: "active",
+      uploadedBy: user?.uid,
+      uploadedByName: user?.name,
+    });
+    logAudit(user!.uid, user!.name, "question.create", `Created question #${id} in ${newSubject} - ${newChapter}`);
+    toast.success("Question created and published to Question Bank!");
+    setIsAdding(false);
+    resetNewForm();
     load();
   };
 
@@ -80,7 +131,15 @@ export default function QuestionBank() {
           <FileQuestion className="text-brand" size={20} />
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Question Bank</h1>
         </div>
-        <Link to="/admin/import" className="text-sm font-medium text-brand hover:underline">Bulk Import →</Link>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsAdding(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-brand text-white text-xs font-semibold hover:bg-brand/90 transition shadow-sm"
+          >
+            <Plus size={15} /> Add MCQ
+          </button>
+          <Link to="/admin/import" className="text-sm font-medium text-brand hover:underline">Bulk Import →</Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mt-5">
@@ -145,7 +204,30 @@ export default function QuestionBank() {
             <button onClick={() => remove(q.id)} className="text-red-500 shrink-0 p-1"><Trash2 size={15} /></button>
           </div>
         ))}
-        {filtered.length === 0 && <p className="text-sm text-slate-500 text-center py-10">No questions match these filters.</p>}
+        {filtered.length === 0 && (
+          <div className="text-center py-12 bg-slate-50 dark:bg-slate-900/40 rounded-2xl border border-dashed border-slate-200 dark:border-white/10 p-6">
+            <FileQuestion className="mx-auto text-slate-400 mb-2" size={32} />
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">
+              {questions.length === 0 ? "Question bank is empty." : "No questions match these filters."}
+            </p>
+            <p className="text-xs text-slate-500 mb-4">
+              {questions.length === 0 ? "Start building your question bank with real questions." : "Try adjusting your search or filters."}
+            </p>
+            {questions.length === 0 && (
+              <div className="flex justify-center gap-2">
+                <Link to="/admin/import" className="px-3.5 py-2 rounded-lg bg-brand text-white text-xs font-semibold">
+                  📄 Bulk Import CSV
+                </Link>
+                <Link to="/admin/import/pdf" className="px-3.5 py-2 rounded-lg border border-slate-300 dark:border-white/10 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                  📑 PDF Import
+                </Link>
+                <Link to="/teacher/upload" className="px-3.5 py-2 rounded-lg border border-slate-300 dark:border-white/10 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                  ✍️ Add Single Question
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {editing && (
@@ -166,6 +248,129 @@ export default function QuestionBank() {
             <button onClick={saveEdit} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-white text-sm font-semibold">
               <Check size={15} /> Save Changes
             </button>
+          </div>
+        </div>
+      )}
+
+      {isAdding && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setIsAdding(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-xl w-full max-h-[90vh] overflow-y-auto space-y-4 shadow-2xl border border-slate-100 dark:border-white/10">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-3">
+              <div>
+                <h3 className="font-bold text-lg text-slate-900 dark:text-white">Add New MCQ</h3>
+                <p className="text-xs text-slate-500">Create a question that immediately updates the student question bank & totals.</p>
+              </div>
+              <button onClick={() => setIsAdding(false)} className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-1">Subject</label>
+                <select className="input w-full" value={newSubject} onChange={(e) => setNewSubject(e.target.value)}>
+                  <option value="Physics">Physics</option>
+                  <option value="Chemistry">Chemistry</option>
+                  <option value="Mathematics">Mathematics</option>
+                  <option value="Biology">Biology</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-1">Target Exam</label>
+                <select className="input w-full" value={newExam} onChange={(e) => setNewExam(e.target.value)}>
+                  <option value="jee-main">JEE Main</option>
+                  <option value="jee-advanced">JEE Advanced</option>
+                  <option value="neet">NEET</option>
+                  <option value="all">All Exams</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-1">Chapter Name</label>
+                <input
+                  className="input w-full"
+                  placeholder="e.g. Kinematics, Thermodynamics"
+                  value={newChapter}
+                  onChange={(e) => setNewChapter(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-1">Difficulty</label>
+                <select className="input w-full" value={newDifficulty} onChange={(e) => setNewDifficulty(e.target.value as any)}>
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-1">Question Text</label>
+              <textarea
+                className="input w-full"
+                rows={3}
+                placeholder="Type the question statement here..."
+                value={newText}
+                onChange={(e) => setNewText(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block">
+                Answer Options (select radio for correct answer)
+              </label>
+              {newOptions.map((opt, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="correct_opt"
+                    id={`opt_${i}`}
+                    checked={newCorrectAnswer === i}
+                    onChange={() => setNewCorrectAnswer(i)}
+                    className="accent-brand h-4 w-4"
+                  />
+                  <span className="text-xs font-bold text-slate-500 w-5">({String.fromCharCode(65 + i)})</span>
+                  <input
+                    className="input flex-1 text-sm"
+                    placeholder={`Option ${String.fromCharCode(65 + i)}`}
+                    value={opt}
+                    onChange={(e) => {
+                      const updated = [...newOptions];
+                      updated[i] = e.target.value;
+                      setNewOptions(updated);
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-1">Explanation / Solution (Optional)</label>
+              <textarea
+                className="input w-full text-sm"
+                rows={2}
+                placeholder="Detailed step-by-step solution..."
+                value={newSolution}
+                onChange={(e) => setNewSolution(e.target.value)}
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-white/10">
+              <button
+                type="button"
+                onClick={() => setIsAdding(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-white/10 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={createQuestion}
+                className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-brand text-white text-xs font-semibold hover:bg-brand/90 shadow-md shadow-brand/20 transition"
+              >
+                <Plus size={15} /> Save & Add to Question Bank
+              </button>
+            </div>
           </div>
         </div>
       )}

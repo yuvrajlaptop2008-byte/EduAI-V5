@@ -19,6 +19,7 @@ const Signup = () => {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState<"student" | "teacher" | "parent" | "admin">("student");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -51,8 +52,11 @@ const Signup = () => {
     try {
       setError("");
       setLoading(true);
-      await signupWithEmail(email, password, name);
-      navigate("/app");
+      await signupWithEmail(email, password, name, role);
+      if (role === "teacher") navigate("/teacher");
+      else if (role === "admin") navigate("/admin");
+      else if (role === "parent") navigate("/parent");
+      else navigate("/app");
     } catch (err: any) {
       if (err.code ==="auth/email-already-in-use") {
         setError("This email is already in use by another account. Please log in instead.",
@@ -86,48 +90,41 @@ const Signup = () => {
       navigate("/app");
     } catch (err: any) {
       if (
-        err.code ==="auth/network-request-failed" ||
-        err.code ==="auth/internal-error"
+        err.code === "auth/popup-closed-by-user" ||
+        err.code === "auth/user-cancelled"
       ) {
-        setError("Secure redirect initiated due to iframe restrictions...");
-        setLoading(true);
-      } else if (
-        err.code ==="auth/popup-closed-by-user" ||
-        err.code ==="auth/user-cancelled"
-      ) {
-        setError("Sign-up was cancelled. If the popup was blocked, please allow popups for this site or try opening the app in a new tab.",
-        );
-        setLoading(false);
+        setError("Sign-up popup was closed. Please try again.");
+      } else if (err.code === "auth/popup-blocked") {
+        setError("Popup was blocked by your browser. Please allow popups or open in a new tab.");
+      } else if (err.code === "auth/unauthorized-domain") {
+        setError("This domain is not authorized for OAuth operations in Firebase Console.");
       } else {
-        setError("Failed to sign up with Google. Please try again.");
-        setLoading(false);
+        setError(`Google sign-up failed: ${err.message || "Please try again."}`);
       }
+    } finally {
+      setLoading(false);
     }
   };
 
-
-
-
-
   return (
-    <div className="min-h-screen bg-white dark:bg-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl shadow-slate-200/50 p-8 md:p-12 border border-slate-100"
+        className="max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl shadow-xl shadow-slate-200/50 dark:shadow-none p-8 md:p-10 border border-slate-200/80 dark:border-slate-800"
       >
-        <div className="text-center mb-10">
-          <Link to="/" className="inline-flex items-center gap-2 mb-6">
-            <div className="w-10 h-10 bg-brand rounded-lg flex items-center justify-center text-white font-bold font-sans tracking-tight text-2xl">
-              M
+        <div className="text-center mb-8">
+          <Link to="/" className="inline-flex items-center gap-2.5 mb-4 group">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand to-amber-400 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-brand/20 group-hover:scale-105 transition-transform">
+              E
             </div>
-            <span className="text-2xl font-bold font-sans tracking-tight text-brand tracking-tight">
-              MARKS
+            <span className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+              Edu<span className="text-brand">AI</span>
             </span>
           </Link>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Create Account</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-2">
-            Join 5 million+ students today
+          <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white">Create Account</h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-1.5 text-sm">
+            Join thousands of JEE & NEET aspirants today
           </p>
         </div>
 
@@ -146,6 +143,34 @@ const Signup = () => {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-slate-700 dark:text-slate-300 ml-1">
+              Select Your Role
+            </label>
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { id: "student", label: "Student", icon: "🎓" },
+                { id: "teacher", label: "Teacher", icon: "👨‍🏫" },
+                { id: "parent", label: "Parent", icon: "👨‍👩‍👧" },
+                { id: "admin", label: "Admin", icon: "🛡️" },
+              ].map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => setRole(r.id as any)}
+                  className={`py-2 px-1 rounded-xl text-xs font-bold transition-all border flex flex-col items-center gap-1 ${
+                    role === r.id
+                      ? "bg-brand/10 border-brand text-brand shadow-sm"
+                      : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                  }`}
+                >
+                  <span className="text-base">{r.icon}</span>
+                  <span>{r.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-2">
             <label className="text-sm font-bold text-slate-700 dark:text-slate-300 ml-1">
               Full Name

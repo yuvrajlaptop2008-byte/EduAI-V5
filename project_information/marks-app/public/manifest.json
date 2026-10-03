@@ -1,0 +1,21 @@
+{
+  "short_name": "MarksApp",
+  "name": "Marks App — JEE & NEET Exam Preparation Platform",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0b1326",
+  "theme_color": "#ff6b00",
+  "display": "standalone",
+  "orientation": "portrait-primary"
+}

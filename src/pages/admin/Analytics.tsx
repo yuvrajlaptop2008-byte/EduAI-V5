@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { getDocs, collection, query, where } from "firebase/firestore";
 import { db } from "../../firebase";
+import { dataService } from "../../services/dataService";
 import { listInstitutes } from "../../services/institutesDB";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from "recharts";
 import StatCard from "../../components/layout/StatCard";
@@ -18,9 +19,9 @@ export default function Analytics() {
 
   useEffect(() => {
     (async () => {
-      const [users, questions, tests, attempts, institutes] = await Promise.all([
+      const [users, qCount, tests, attempts, institutes] = await Promise.all([
         getDocs(collection(db,"users")),
-        getDocs(collection(db,"custom_questions")),
+        dataService.getQuestionCount(),
         getDocs(collection(db,"groupTests")),
         getDocs(collection(db,"groupTestAttempts")),
         listInstitutes(),
@@ -43,7 +44,7 @@ export default function Analytics() {
       const sorted = attempts.docs.sort((a,b)=>((b.data() as any).score||0)-((a.data() as any).score||0)).slice(0,8);
       setTopStudents(sorted.map(d=>({ name: (d.data() as any).studentName||"Student", score: (d.data() as any).score||0 })));
 
-      setStats({ users: users.size, questions: questions.size, tests: tests.size, attempts: attempts.size, institutes: institutes.length });
+      setStats({ users: users.size, questions: qCount, tests: tests.size, attempts: attempts.size, institutes: institutes.length });
       setLoading(false);
     })();
   }, []);

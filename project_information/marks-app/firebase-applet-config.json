@@ -1,0 +1,10 @@
+{
+  "projectId": "entrancearena",
+  "appId": "1:609046336788:web:a2834ef1420e08f0521e01",
+  "apiKey": "AIzaSyCcQXXCBTC3onAm8r5q9TBJwtr3XhJQFr4",
+  "authDomain": "entrancearena.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "entrancearena.firebasestorage.app",
+  "messagingSenderId": "609046336788",
+  "measurementId": ""
+}

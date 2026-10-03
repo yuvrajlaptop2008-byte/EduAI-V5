@@ -1,0 +1,42 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isImage() {
+      return request.resource.contentType.matches('image/.*') &&
+             request.resource.size < 5 * 1024 * 1024; // 5MB max
+    }
+    
+    function isPdf() {
+      return request.resource.contentType == 'application/pdf' &&
+             request.resource.size < 25 * 1024 * 1024; // 25MB max
+    }
+
+    // User profile avatars
+    match /avatars/{userId}/{fileName} {
+      allow read: if true;
+      allow write: if isSignedIn() && request.auth.uid == userId && isImage();
+    }
+
+    // Question diagrams and formula assets
+    match /question-assets/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn() && isImage();
+    }
+
+    // Bulk PDF question papers for AI extraction
+    match /pdf-imports/{userId}/{fileName} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow write: if isSignedIn() && request.auth.uid == userId && isPdf();
+    }
+
+    // Default deny
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

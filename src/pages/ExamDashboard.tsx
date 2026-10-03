@@ -43,89 +43,153 @@ import AnalysisDashboard from "./AnalysisDashboard";
 import { addNote } from "../utils/firestoreNotesDB";
 import Scratchpad from "../components/Scratchpad";
 import { getTestReports } from "../utils/analysis";
-import { getQuestionsForChapter } from "../utils/questionBank";
+import { getQuestionsForChapter, getCustomQuestions } from "../utils/questionBank";
+import { collection, onSnapshot } from "firebase/firestore";
+import { db } from "../firebase";
 
-// Functional data based on selected PYQ year
-const pyqData: Record<
-  string,
-  Record<string, { solved: number; total: number }>
-> = {"Last 1 Year": {
-    Physics: { solved: 717, total: 1925 },
-    Chemistry: { solved: 876, total: 2096 },
-    Mathematics: { solved: 693, total: 1667 },
-    Biology: { solved: 850, total: 2200 },"English Proficiency": { solved: 120, total: 300 },"Logical Reasoning": { solved: 150, total: 400 },"General Ability Test": { solved: 200, total: 500 },
-  },"Last 3 Years": {
-    Physics: { solved: 1500, total: 3500 },
-    Chemistry: { solved: 1800, total: 4000 },
-    Mathematics: { solved: 1400, total: 3000 },
-    Biology: { solved: 2000, total: 4500 },"English Proficiency": { solved: 300, total: 800 },"Logical Reasoning": { solved: 400, total: 1000 },"General Ability Test": { solved: 500, total: 1200 },
-  },"Last 5 Years": {
-    Physics: { solved: 2500, total: 5500 },
-    Chemistry: { solved: 2800, total: 6000 },
-    Mathematics: { solved: 2400, total: 5000 },
-    Biology: { solved: 3500, total: 7000 },"English Proficiency": { solved: 500, total: 1500 },"Logical Reasoning": { solved: 700, total: 1800 },"General Ability Test": { solved: 900, total: 2000 },
-  },"Last 10 Years": {
-    Physics: { solved: 3800, total: 7200 },
-    Chemistry: { solved: 4000, total: 7800 },
-    Mathematics: { solved: 3600, total: 7000 },
-    Biology: { solved: 5200, total: 10500 },"English Proficiency": { solved: 800, total: 2000 },"Logical Reasoning": { solved: 1000, total: 2200 },"General Ability Test": { solved: 1200, total: 2500 },
-  },"All PYQ": {
-    Physics: { solved: 4500, total: 8500 },
-    Chemistry: { solved: 4800, total: 9000 },
-    Mathematics: { solved: 4400, total: 8000 },
-    Biology: { solved: 6000, total: 12000 },"English Proficiency": { solved: 1000, total: 2500 },"Logical Reasoning": { solved: 1200, total: 3000 },"General Ability Test": { solved: 1500, total: 4000 },
-  },
+// PYQ Period options and realistic question scaling factors
+export const PYQ_WINDOWS = [
+  "Last 1 Year",
+  "Last 3 Years",
+  "Last 5 Years",
+  "Last 10 Years",
+  "All PYQ",
+];
+
+const pyqYearMultipliers: Record<string, number> = {
+  "Last 1 Year": 25,
+  "Last 3 Years": 65,
+  "Last 5 Years": 110,
+  "Last 10 Years": 180,
+  "All PYQ": 240,
 };
 
 export default function ExamDashboard() {
   const { examId } = useParams();
   const navigate = useNavigate();
-  const { setPointsEarned, setCurrentQs } = useUser();
+  const { setPointsEarned, setCurrentQs, chapterProgress, user, getQuestionAttemptsToday } = useUser();
+
+  // Sync test reports from Firestore on user login
+  useEffect(() => {
+    if (user?.uid && user.uid !== "demo") {
+      import("../utils/analysis").then(({ syncTestReports }) => {
+        syncTestReports(user.uid).catch(() => {});
+      });
+    }
+  }, [user?.uid]);
 
   // Find the matching exam type from syllabusData
   const examKey = useMemo(() => {
-    if (!examId) return"JEE Main" as ExamType;
-    const normalizedId = examId.toLowerCase().replace(/-/g,"");
+    if (!examId) return "JEE Main" as ExamType;
+    const normalizedId = examId.toLowerCase().replace(/-/g, "");
     const found = Object.keys(syllabusData).find(
-      (key) => key.toLowerCase().replace(/[^a-z0-9]/g,"") === normalizedId,
+      (key) => key.toLowerCase().replace(/[^a-z0-9]/g, "") === normalizedId,
     );
-    return (found as ExamType) ||"JEE Main";
+    return (found as ExamType) || "JEE Main";
   }, [examId]);
 
   const examData = syllabusData[examKey];
   const availableSubjects = Object.keys(examData) as SubjectType[];
 
-  // Dynamic solved counts based on real test reports
-  const realSolvedMap = useMemo(() => {
-    try {
-      const reports = getTestReports();
-      const map: Record<string, number> = {};
-      reports.forEach((r) => {
-        const sub = r.subject;
-        map[sub] = (map[sub] || 0) + r.correct;
-      });
-      return map;
-    } catch (e) {
-      console.error(e);
-      return {};
-    }
-  }, []);
+  // Dynamic solved & correct counts based on real user test reports and chapter progress
+  const { realSolvedMap, realSolvedByChapterMap, realCorrectByChapterMap } = useMemo(() => {
+    const subMap: Record<string, number> = {};
+    const chSolvedMap: Record<string, number> = {};
+    const chCorrectMap: Record<string, number> = {};
 
-  const realSolvedByChapterMap = useMemo(() => {
     try {
       const reports = getTestReports();
-      const map: Record<string, number> = {};
       reports.forEach((r) => {
+        if (r.subject) {
+          subMap[r.subject] = (subMap[r.subject] || 0) + (r.correct || 0);
+        }
         if (r.chapter) {
-          map[r.chapter] = (map[r.chapter] || 0) + r.correct;
+          chSolvedMap[r.chapter] = (chSolvedMap[r.chapter] || 0) + (r.total || r.correct || 0);
+          chCorrectMap[r.chapter] = (chCorrectMap[r.chapter] || 0) + (r.correct || 0);
         }
       });
-      return map;
     } catch (e) {
       console.error(e);
-      return {};
     }
+
+    // Merge chapterProgress from user context if student practiced in chapter mode
+    if (chapterProgress) {
+      Object.entries(chapterProgress).forEach(([chName, prog]) => {
+        if (prog && prog.questionsSolved > 0) {
+          const prevSolved = chSolvedMap[chName] || 0;
+          if (prog.questionsSolved > prevSolved) {
+            chSolvedMap[chName] = prog.questionsSolved;
+            chCorrectMap[chName] = Math.round(prog.questionsSolved * ((prog.accuracy || 100) / 100));
+          }
+        }
+      });
+    }
+
+    return {
+      realSolvedMap: subMap,
+      realSolvedByChapterMap: chSolvedMap,
+      realCorrectByChapterMap: chCorrectMap,
+    };
+  }, [chapterProgress]);
+
+  const [questionsVersion, setQuestionsVersion] = useState(0);
+
+  // Auto-update total MCQ as admin adds or deletes questions in real-time
+  useEffect(() => {
+    // 1. Same-window custom event from dataService & questionBank
+    const handleQuestionsChanged = () => {
+      setQuestionsVersion((v) => v + 1);
+    };
+    window.addEventListener("eduai_questions_changed", handleQuestionsChanged);
+
+    // 2. Storage event for cross-tab sync in same browser
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === "custom_questions") {
+        setQuestionsVersion((v) => v + 1);
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+
+    // 3. BroadcastChannel across all browser tabs
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel("eduai_questions_channel");
+      bc.onmessage = () => {
+        setQuestionsVersion((v) => v + 1);
+      };
+    } catch {}
+
+    // 4. Cloud Firestore real-time listener for instant cross-device updates
+    let unsubscribe: (() => void) | null = null;
+    try {
+      const qCol = collection(db, "custom_questions");
+      unsubscribe = onSnapshot(
+        qCol,
+        (snapshot) => {
+          const list = snapshot.docs.map((d) => d.data());
+          localStorage.setItem("custom_questions", JSON.stringify(list));
+          setQuestionsVersion((v) => v + 1);
+        },
+        (err) => {
+          console.warn("[ExamDashboard] Firestore question listener:", err);
+        }
+      );
+    } catch {}
+
+    return () => {
+      window.removeEventListener("eduai_questions_changed", handleQuestionsChanged);
+      window.removeEventListener("storage", handleStorage);
+      if (bc) bc.close();
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
+
+  // Real-time custom questions array that reacts to additions/deletions
+  const customQuestions = useMemo(() => {
+    return getCustomQuestions().filter(
+      (q) => q.status !== "pending" && q.status !== "rejected"
+    );
+  }, [questionsVersion]);
 
   const [pyqYear, setPyqYear] = useState<string>("Last 1 Year");
   const [globalTrendPeriod, setGlobalTrendPeriod] = useState<string>("2025");
@@ -264,8 +328,6 @@ export default function ExamDashboard() {
   const [savedToNotebook, setSavedToNotebook] = useState<
     Record<number, boolean>
   >({});
-  const { user, getQuestionAttemptsToday } = useUser();
-
   // Load real questions from the question bank for the active chapter
   const chapterQuestions = useMemo(() => {
     if (!activeChapter || activeTab === "Home") return [];
@@ -376,25 +438,8 @@ export default function ExamDashboard() {
   // Generate chapters based on the real syllabus data for the active subject
   const currentChapters = useMemo(() => {
     if (activeTab === "Home") return [];
-    const subjectChapters = examData[activeTab as SubjectType] || [];
-
-    const baseData = pyqData[pyqYear]?.[activeTab] || {
-      solved: 0,
-      total: 0,
-    };
-    const realSolved = realSolvedMap[activeTab] || 0;
-    const subjectData = {
-      solved: Math.min(baseData.total, baseData.solved + realSolved),
-      total: baseData.total,
-    };
-    const numChapters = subjectChapters.length;
-
-    // Distribute questions roughly evenly among chapters
-    const baseTotalQs = Math.floor(subjectData.total / numChapters);
-    const baseSolvedQs = Math.floor(subjectData.solved / numChapters);
-
-    let remainingTotal = subjectData.total - baseTotalQs * numChapters;
-    let remainingSolved = subjectData.solved - baseSolvedQs * numChapters;
+    const subjectChapters = (examData[activeTab as SubjectType] || []) as string[];
+    const qsMultiplier = pyqYearMultipliers[pyqYear] || 25;
 
     const getChapterTrend = (chapterName: string, index: number, period: string) => {
       let hash = 0;
@@ -455,25 +500,20 @@ export default function ExamDashboard() {
       const classLevel = index % 2 === 0 ? "11th" : "12th";
       const unitNum = (index % 5) + 1;
 
-      let totalQs = baseTotalQs;
-      if (remainingTotal > 0) {
-        totalQs++;
-        remainingTotal--;
-      }
+      // Custom questions added for this specific chapter by admin
+      const customForCh = customQuestions.filter(
+        (q) =>
+          q.subject?.toLowerCase() === activeTab.toLowerCase() &&
+          q.chapter?.toLowerCase() === chapterName.toLowerCase()
+      ).length;
 
-      let solvedQs = baseSolvedQs;
-      if (remainingSolved > 0) {
-        solvedQs++;
-        remainingSolved--;
-      }
+      const totalQs = qsMultiplier + customForCh;
 
-      // Add real solved questions specifically for this chapter
-      const chapterRealSolved = realSolvedByChapterMap[chapterName] || 0;
-      solvedQs = Math.min(totalQs, solvedQs + chapterRealSolved);
-
-      const correctQs = Math.floor(solvedQs * (0.6 + (index % 5) * 0.05));
+      // Real solved and correct count strictly from student test reports
+      const solvedQs = Math.min(totalQs, realSolvedByChapterMap[chapterName] || 0);
+      const correctQs = Math.min(solvedQs, realCorrectByChapterMap[chapterName] || 0);
       const accuracy =
-        solvedQs > 0 ? ((correctQs / solvedQs) * 100).toFixed(2) : "0.00";
+        solvedQs > 0 ? ((correctQs / solvedQs) * 100).toFixed(1) : "0.0";
 
       const beginnerQs = Math.floor(totalQs * 0.3);
       const targetMainQs = Math.floor(totalQs * 0.5);
@@ -502,7 +542,7 @@ export default function ExamDashboard() {
         unit: `Unit ${unitNum}`,
       };
     });
-  }, [activeTab, examData, pyqYear]);
+  }, [activeTab, examData, pyqYear, realSolvedByChapterMap, realCorrectByChapterMap, globalTrendPeriod]);
 
   const filteredAndSortedChapters = useMemo(() => {
     let result = [...currentChapters];
@@ -551,23 +591,31 @@ export default function ExamDashboard() {
   }, [targetDate]);
 
   const renderDashboard = () => {
-    // Calculate overall progress
+    // Calculate overall progress strictly from real user activity
     let totalSolved = 0;
     let totalQs = 0;
     const subjectProgress: Record<string, { solved: number; total: number }> =
       {};
 
     availableSubjects.forEach((subject) => {
-      const baseData = pyqData[pyqYear]?.[subject as string] || {
-        solved: 0,
-        total: 0,
-      };
-      const realSolved = realSolvedMap[subject] || 0;
-      const solved = Math.min(baseData.total, baseData.solved + realSolved);
-      
+      const subjectChapters = (examData[subject as SubjectType] || []) as string[];
+      const qsMultiplier = pyqYearMultipliers[pyqYear] || 25;
+
+      // Count custom questions added by admin for this subject
+      const customForSub = customQuestions.filter(
+        (q) => q.subject?.toLowerCase() === (subject as string).toLowerCase()
+      ).length;
+
+      // Base total for syllabus chapters + all custom questions in this subject
+      const baseTotal = subjectChapters.length * qsMultiplier;
+      const total = baseTotal + customForSub;
+
+      // Real solved questions strictly from user test reports
+      const solved = Math.min(total, realSolvedMap[subject as string] || 0);
+
       const data = {
         solved,
-        total: baseData.total,
+        total: Math.max(total, 1),
       };
       subjectProgress[subject] = data;
       totalSolved += data.solved;
@@ -575,7 +623,7 @@ export default function ExamDashboard() {
     });
 
     const overallProgress =
-      totalQs > 0 ? ((totalSolved / totalQs) * 100).toFixed(2) :"0.00";
+      totalQs > 0 ? ((totalSolved / totalQs) * 100).toFixed(2) : "0.00";
 
     return (
       <div className="space-y-6 pb-24">
@@ -593,7 +641,7 @@ export default function ExamDashboard() {
                 {pyqYear} PYQ{""}
                 <ChevronDown
                   size={14}
-                  className={`transition-transform duration-300 ${showPyqDropdown ?"rotate-180" :""}`}
+                  className={`transition-transform duration-300 ${showPyqDropdown ? "rotate-180" : ""}`}
                 />
               </button>
 
@@ -605,7 +653,7 @@ export default function ExamDashboard() {
                     exit={{ opacity: 0, scale: 0.95, y: 10 }}
                     className="absolute right-0 mt-3 w-44 bg-slate-50/95 dark:bg-slate-800/95 backdrop-blur-xl border border-slate-900/10 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden z-20"
                   >
-                    {Object.keys(pyqData).map((year) => (
+                    {PYQ_WINDOWS.map((year) => (
                       <button
                         key={year}
                         onClick={() => {
@@ -614,8 +662,8 @@ export default function ExamDashboard() {
                         }}
                         className={`w-full text-left px-5 py-3 text-sm font-bold transition-all ${
                           pyqYear === year
-                            ?"bg-brand/20 text-brand border-l-2 border-brand"
-                            :"text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-2 border-transparent"
+                            ? "bg-brand/20 text-brand border-l-2 border-brand"
+                            : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-2 border-transparent"
                         }`}
                       >
                         {year}

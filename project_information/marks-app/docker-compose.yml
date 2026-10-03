@@ -1,0 +1,227 @@
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # 1. PostgreSQL 16 — Core Relational Data (Institutes, Batches, Users, RBAC)
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: marksapp_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-marksapp_core}
+      POSTGRES_USER: ${POSTGRES_USER:-marksapp_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_secure_pwd}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-marksapp_admin} -d ${POSTGRES_DB:-marksapp_core}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - marksapp_network
+
+  # ---------------------------------------------------------------------------
+  # 2. MongoDB 7.0 — Document Store (Questions, LaTeX Blocks, Exam Attempts)
+  # ---------------------------------------------------------------------------
+  mongodb:
+    image: mongo:7.0
+    container_name: marksapp_mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-yuvrajlaptop2008_db_user}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-fwiRnAOWord88J5M}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-marksapp_questions}
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./docker/mongo/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - marksapp_network
+
+  # ---------------------------------------------------------------------------
+  # 3. Redis 7.2 — In-Memory Cache, Live Leaderboard (ZSET) & BullMQ Queues
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7.2-alpine
+    container_name: marksapp_redis
+    restart: unless-stopped
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf", "--requirepass", "${REDIS_PASSWORD:-redis_secure_pwd}"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secure_pwd}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - marksapp_network
+
+  # ---------------------------------------------------------------------------
+  # 4. Meilisearch — Ultra-Fast Typo-Tolerant Search for 50,000+ Questions
+  # ---------------------------------------------------------------------------
+  meilisearch:
+    image: getmeili/meilisearch:v1.7
+    container_name: marksapp_meilisearch
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-meili_super_secret_master_key}
+      MEILI_ENV: ${MEILI_ENV:-development}
+      MEILI_NO_ANALYTICS: "true"
+    ports:
+      - "${MEILI_PORT:-7700}:7700"
+    volumes:
+      - meili_data:/meili_data
+    networks:
+      - marksapp_network
+
+  # ---------------------------------------------------------------------------
+  # 5. Payload CMS — Headless Content Management (Questions, Formulas, Editorial)
+  # ---------------------------------------------------------------------------
+  payload-cms:
+    image: node:20-alpine
+    container_name: marksapp_payload_cms
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./payload:/app
+      - payload_media:/app/media
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PAYLOAD_SECRET: ${PAYLOAD_SECRET:-payload_super_secret_jwt_key_32chars}
+      DATABASE_URI: postgresql://${POSTGRES_USER:-marksapp_admin}:${POSTGRES_PASSWORD:-postgres_secure_pwd}@postgres:5432/${POSTGRES_DB:-marksapp_core}
+      MONGO_URI: mongodb://${MONGO_ROOT_USER:-yuvrajlaptop2008_db_user}:${MONGO_ROOT_PASSWORD:-fwiRnAOWord88J5M}@mongodb:27017/${MONGO_DB:-marksapp_questions}?authSource=admin
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure_pwd}@redis:6379
+      SERVER_URL: http://localhost:3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    networks:
+      - marksapp_network
+
+  # ---------------------------------------------------------------------------
+  # 6. Appsmith — Advanced Internal Operations, Billing & Backoffice Dashboards
+  # ---------------------------------------------------------------------------
+  appsmith:
+    image: appsmith/appsmith-ce:v1.9
+    container_name: marksapp_appsmith
+    restart: unless-stopped
+    ports:
+      - "${APPSMITH_PORT:-8090}:80"
+      - "8443:443"
+    volumes:
+      - appsmith_data:/appsmith-stacks
+    environment:
+      APPSMITH_SIGNUP_DISABLED: "false"
+      APPSMITH_ADMIN_EMAILS: ${APPSMITH_ADMIN_EMAILS:-admin@marksapp.io}
+    networks:
+      - marksapp_network
+
+  # ---------------------------------------------------------------------------
+  # 7. Backend API & BullMQ Queue Worker (Node.js / Express / Fastify)
+  # ---------------------------------------------------------------------------
+  backend-api:
+    image: node:20-alpine
+    container_name: marksapp_backend_api
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    environment:
+      PORT: 4000
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-marksapp_admin}:${POSTGRES_PASSWORD:-postgres_secure_pwd}@postgres:5432/${POSTGRES_DB:-marksapp_core}?schema=public
+      MONGODB_URI: mongodb://${MONGO_ROOT_USER:-yuvrajlaptop2008_db_user}:${MONGO_ROOT_PASSWORD:-fwiRnAOWord88J5M}@mongodb:27017/${MONGO_DB:-marksapp_questions}?authSource=admin
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure_pwd}@redis:6379
+      MEILISEARCH_HOST: http://meilisearch:7700
+      MEILISEARCH_KEY: ${MEILI_MASTER_KEY:-meili_super_secret_master_key}
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - marksapp_network
+
+  # ---------------------------------------------------------------------------
+  # 8. Frontend SPA (Vite + React 18 + Tailwind v4)
+  # ---------------------------------------------------------------------------
+  frontend:
+    image: node:20-alpine
+    container_name: marksapp_frontend
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:4000/api
+      VITE_CMS_URL: http://localhost:3000
+    networks:
+      - marksapp_network
+
+  # ---------------------------------------------------------------------------
+  # 9. NGINX Reverse Proxy & API Gateway
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: marksapp_gateway
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+      - backend-api
+      - payload-cms
+    networks:
+      - marksapp_network
+
+# -----------------------------------------------------------------------------
+# Persistent Volumes
+# -----------------------------------------------------------------------------
+volumes:
+  postgres_data:
+    driver: local
+  mongo_data:
+    driver: local
+  redis_data:
+    driver: local
+  meili_data:
+    driver: local
+  payload_media:
+    driver: local
+  appsmith_data:
+    driver: local
+
+# -----------------------------------------------------------------------------
+# Isolated Bridge Network
+# -----------------------------------------------------------------------------
+networks:
+  marksapp_network:
+    driver: bridge

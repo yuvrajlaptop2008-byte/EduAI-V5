@@ -1,6 +1,8 @@
 import Papa from "papaparse";
 import { doc, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
+import { apiClient } from "../services/apiClient";
+import { notifyQuestionBankChanged } from "../services/dataService";
 import type { Question } from "./questionBank";
 
 export interface CsvRow {
@@ -83,6 +85,40 @@ export async function commitRows(rows: ParsedRow[], onProgress?: (done: number, 
     done += chunk.length;
     onProgress?.(done, valid.length);
   }
+
+  // Dual-sync to backend API if available
+  try {
+    const backendQuestions = valid.map((r) => ({
+      text: r.data!.text,
+      options: r.data!.options.map((opt) => ({ text: opt })),
+      correctAnswer: r.data!.correctAnswer,
+      type: "single",
+      subject: r.data!.subject,
+      chapter: r.data!.chapter,
+      difficulty: r.data!.difficulty,
+      exam: r.data!.exam || "JEE_MAIN",
+      year: r.data!.year,
+      solution: r.data!.solution,
+      tags: [],
+      status: "active",
+    }));
+    fetch(`${apiClient.baseUrl}/api/questions/bulk`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questions: backendQuestions }),
+    }).catch(() => {});
+  } catch {}
+
+  // Dual-sync to local storage and broadcast to live student dashboards
+  try {
+    const raw = localStorage.getItem("custom_questions");
+    const existing: any[] = raw ? JSON.parse(raw) : [];
+    const newItems = valid.map((r) => ({ ...r.data, ...extra }));
+    const merged = [...existing.filter((e) => !newItems.some((n) => n.id === e.id)), ...newItems];
+    localStorage.setItem("custom_questions", JSON.stringify(merged));
+  } catch {}
+  notifyQuestionBankChanged();
+
   return done;
 }
 

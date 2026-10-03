@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase";
+import { dataService } from "../../services/dataService";
 import { useUser } from "../../context/UserContext";
 import { listExamGroups } from "../../services/examGroupsDB";
 import { createGroupTest } from "../../services/groupTestsDB";
@@ -29,7 +30,9 @@ export default function CreateGroupTest() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    getDocs(collection(db, "custom_questions")).then((s) => setQuestions(s.docs.map((d) => d.data() as Question).filter((q) => q.status !== "pending" && q.status !== "rejected")));
+    dataService.getQuestions({ limit: 200 }).then((res) => {
+      setQuestions(res.questions.filter((q) => q.status !== "pending" && q.status !== "rejected"));
+    });
     listExamGroups(user?.instituteId || undefined).then((gs) => { setGroups(gs); if (gs[0]) setGroupIds(new Set([gs[0].id])); });
   }, [user?.instituteId]);
 
@@ -185,8 +188,16 @@ export default function CreateGroupTest() {
               </motion.div>
             ))}
             {filtered.length === 0 && (
-              <div className="text-center py-16 text-slate-400">
-                <p className="text-sm">No questions match these filters.</p>
+              <div className="text-center py-16 text-slate-400 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-dashed border-slate-200 dark:border-white/10 p-6">
+                <p className="text-sm font-medium mb-3">No questions in the question bank yet.</p>
+                <div className="flex justify-center gap-3">
+                  <a href="/teacher/upload" className="px-4 py-2 rounded-xl bg-brand text-white text-xs font-semibold shadow-sm">
+                    ✍️ Upload Question
+                  </a>
+                  <a href="/admin/import" className="px-4 py-2 rounded-xl border border-slate-300 dark:border-white/10 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    📄 Bulk CSV Import
+                  </a>
+                </div>
               </div>
             )}
           </div>

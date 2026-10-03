@@ -1,17 +1,23 @@
 # Dependencies
 node_modules/
 functions/node_modules/
+server/node_modules/
 
 # Build outputs
 dist/
 build/
 .firebase/
 functions/lib/
+server/dist/
 
-# Environment
+# Environment & Secrets
 .env
 .env.local
 .env.production
+server/.env
+*.env
+atlas-credentials.env
+*.env.local
 !.env.example
 
 # System
