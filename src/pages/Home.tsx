@@ -639,24 +639,7 @@ const Home = () => {
           </section>
         )}
 
-        {/* Overall Test Progress */}
-        <section className="bg-slate-50/50 dark:bg-slate-800/50 p-6 rounded-[2rem] border border-slate-900/5 dark:border-white/5 shadow-sm">
-          <div className="flex justify-between items-center mb-4">
-            <div>
-              <h3 className="font-bold text-sm text-slate-800 dark:text-white">Overall Test Progress</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Target: 10 Mock Tests</p>
-            </div>
-            <span className="text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-900 px-2.5 py-1 rounded-md border border-slate-900/5 dark:border-white/5">
-              {reports.length}/10 Tests
-            </span>
-          </div>
-          <div className="w-full h-2 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden border border-slate-900/5 dark:border-white/5">
-            <div
-              className="h-full bg-brand rounded-full transition-all duration-500"
-              style={{ width: `${Math.min((reports.length / 10) * 100, 100)}%` }}
-            />
-          </div>
-        </section>
+
 
         {/* Weak Chapters */}
         {weakChaptersList.length > 0 && (
