@@ -640,26 +640,6 @@ const Home = () => {
         )}
 
 
-
-        {/* Weak Chapters */}
-        {weakChaptersList.length > 0 && (
-          <section className="bg-slate-50/50 dark:bg-slate-800/50 p-6 rounded-[2rem] border border-slate-900/5 dark:border-white/5 shadow-sm">
-            <h3 className="text-xs font-black text-rose-500 uppercase tracking-widest mb-4 flex items-center gap-1.5 pl-1">
-              <Zap size={14} className="fill-rose-500" /> Weak Chapters
-            </h3>
-            <div className="space-y-3">
-              {weakChaptersList.slice(0, 3).map((w, i) => (
-                <div key={i} className="flex justify-between items-center text-xs bg-slate-100/50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-900/5 dark:border-white/5">
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">{w.chapter}</span>
-                  <span className="text-rose-500 font-bold bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
-                    {w.accuracy}% Acc
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
         {/* PYQ Bank */}
         <section>
           <div className="flex justify-between items-center mb-4 border-b border-slate-900/5 dark:border-white/5 pb-3">
